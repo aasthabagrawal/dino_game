@@ -37,123 +37,84 @@ setInterval(() => {
 
 
 
+@app.route('/get_csv')
+def get_csv():
+    file_type = request.args.get('file')
 
+    # Determine which file to fetch
+    file_path = 'ipoinput.csv' if file_type == 'input' else 'ipooutput.csv' if file_type == 'output' else None
 
+    if not file_path or not os.path.exists(file_path):
+        return "<p style='color:red;'>CSV file not found</p>", 404
 
-
-
-from oversmart import preipo
-@app.route('/preipo', methods=['POST'])
-def handle_preipo():
     try:
-        data = request.json
-        row_data = data.get('rowData')
-        
-        # Split the CSV row into individual fields
-        fields = row_data.split(',')
-        
-        # Call your preipo function with the appropriate parameters
-        # You'll need to modify this to match your actual function signature
-        result = preipo(*fields)  # Pass the fields as separate arguments
-        
-        return jsonify({'success': True, 'result': result})
+        # Load the CSV file
+        df = pd.read_csv(file_path, encoding='windows-1252')
+
+        # Standardize and clean column names
+        df.columns = df.columns.str.strip().str.lower()
+
+        # Ensure the 'IPO Date' column exists before sorting
+        if 'ipo date' in df.columns:
+            # Parse dates in the 'IPO Date' column
+            df['ipo date'] = pd.to_datetime(df['ipo date'], format='%m/%d/%Y', errors='coerce')
+
+            # Drop rows where 'IPO Date' couldn't be parsed
+            df = df.dropna(subset=['ipo date'])       
+
+            # Sort by IPO Date in descending order
+            df = df.sort_values(by='ipo date', ascending=False)
+
+            # Convert back to MM/DD/YYYY before returning
+            df['ipo date'] = df['ipo date'].dt.strftime('%m/%d/%Y')
+
+        # Add a "Submit" column only for the input file
+        if file_type == 'input':
+            df['Action'] = df.apply(lambda row: f"""
+                <button onclick="triggerPreIPO('{row.to_json()}')">Submit</button>
+            """, axis=1)
+
+
+        # Return the DataFrame as an HTML table
+        return df.to_html(classes='table table-striped', index=False,escape=False)
+    
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return f"<p style='color:red;'>Error reading CSV: {e}</p>", 500
 
 
-function updateTable() {
-  if (!currentFile) return;
 
-  fetch(`/get_csv?file=${currentFile}`)
-    .then(response => response.text())
-    .then(data => {
-      let displayDiv = document.getElementById('csv_display');
-      
-      // Process the CSV data to add submit buttons if it's an input file
-      if (currentFile === 'input') {
-        // Convert the CSV text to HTML table with submit buttons
-        const rows = data.split('\n');
-        let tableHTML = '<table border="1">';
-        
-        // Process header row
-        const headerCells = rows[0].split(',');
-        tableHTML += '<tr>';
-        headerCells.forEach(cell => {
-          tableHTML += `<th>${cell.trim()}</th>`;
-        });
-        tableHTML += '<th>Action</th></tr>'; // Add header for button column
-        
-        // Process data rows
-        for (let i = 1; i < rows.length; i++) {
-          if (rows[i].trim() === '') continue; // Skip empty rows
-          
-          const rowCells = rows[i].split(',');
-          tableHTML += '<tr>';
-          rowCells.forEach(cell => {
-            tableHTML += `<td>${cell.trim()}</td>`;
-          });
-          
-          // Add submit button with rowData as parameter
-          tableHTML += `<td><button onclick="submitToPreIPO('${encodeURIComponent(rows[i])}')">Submit</button></td></tr>`;
-        }
-        
-        tableHTML += '</table>';
-        displayDiv.innerHTML = tableHTML;
-      } else {
-        // For other files, just display as is
-        displayDiv.innerHTML = data;
-      }
-      
-      displayDiv.style.display = 'block';
-      
-      setTimeout(() => {
-        updateRecordCount();
 
-        if (currentFile === 'output') {
-          addSymbolFilter();
-          addDateFilter();
-        }
-      }, 100);
+from flask import jsonify
+import json
+import overmart  # Import the overmart module
+
+@app.route('/trigger_preipo', methods=['POST'])
+def trigger_preipo():
+    try:
+        row_data = request.get_json()  # Get row data as JSON
+        row_dict = json.loads(row_data)  # Convert JSON string to dictionary
+
+        # Pass the row data to the preipo function in overmart.py
+        result = overmart.preipo(row_dict)
+
+        return jsonify({"message": "PreIPO triggered successfully!", "result": result})
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+function triggerPreIPO(rowData) {
+    fetch('/trigger_preipo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: rowData // Send row data as JSON
     })
-    .catch(error => {
-      document.getElementById('csv_display').innerHTML = `<p style="color:red;">Error loading data: ${error}</p>`;
-      document.getElementById('record_count').textContent = '0';
-    });
+    .then(response => response.text())
+    .then(data => alert(data))
+    .catch(error => alert('Error triggering preIPO: ' + error));
 }
-
-// Function to handle the submit button click
-function submitToPreIPO(rowData) {
-  // Decode the URL-encoded row data
-  const decodedData = decodeURIComponent(rowData);
-  
-  // Make an AJAX call to your Python function
-  fetch('/preipo', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ rowData: decodedData }),
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success) {
-      alert('Submission successful!');
-      // Optionally refresh the table after successful submission
-      updateTable();
-    } else {
-      alert('Error: ' + data.error);
-    }
-  })
-  .catch(error => {
-    console.error('Error:', error);
-    alert('An error occurred during submission.');
-  });
-}
-
-
-
-
-
+def preipo(row):
+    print("Processing PreIPO for:", row)
+    return f"PreIPO process started for {row.get('symbol', 'Unknown')}"
 
 
 
