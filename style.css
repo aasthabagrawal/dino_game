@@ -1,3 +1,103 @@
+from flask import Flask, request
+import pandas as pd
+import os
+
+app = Flask(__name__)
+
+@app.route('/get_csv')
+def get_csv():
+    file_type = request.args.get('file')
+
+    # Determine which file to fetch
+    file_path = 'ipoinput.csv' if file_type == 'input' else 'ipooutput.csv' if file_type == 'output' else None
+
+    if not file_path or not os.path.exists(file_path):
+        return "<p style='color:red;'>CSV file not found</p>", 404
+
+    try:
+        # Load the CSV file
+        df = pd.read_csv(file_path, encoding='windows-1252')
+
+        # Standardize and clean column names
+        df.columns = df.columns.str.strip().str.lower()
+
+        # Ensure the 'IPO Date' column exists before sorting
+        if 'ipo date' in df.columns:
+            df['ipo date'] = pd.to_datetime(df['ipo date'], format='%m/%d/%Y', errors='coerce')
+            df = df.dropna(subset=['ipo date'])  # Drop invalid dates
+            df = df.sort_values(by='ipo date', ascending=False)
+            df['ipo date'] = df['ipo date'].dt.strftime('%m/%d/%Y')
+
+        # Add a delete button column only for 'input' file
+        if file_type == 'input':
+            df['delete'] = df.apply(lambda row: f"<button class='delete-btn' data-row='{row.to_json()}' onclick='deleteRow(this)'>Delete</button>", axis=1)
+
+        # Convert DataFrame to HTML
+        return df.to_html(classes='table table-striped', index=False, escape=False)
+    
+    except Exception as e:
+        return f"<p style='color:red;'>Error reading CSV: {e}</p>", 500
+
+js
+function deleteRow(button) {
+  const rowData = JSON.parse(button.getAttribute('data-row')); // Extract row data from button
+
+  fetch('/delete_row', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rowData)
+  })
+  .then(response => response.json())
+  .then(result => {
+    if (result.success) {
+      alert("Row deleted successfully!");
+      updateTable(); // Refresh table
+    } else {
+      alert("Error deleting row: " + result.error);
+    }
+  })
+  .catch(error => alert("Request failed: " + error));
+}
+
+api
+import json
+from flask import jsonify
+
+@app.route('/delete_row', methods=['POST'])
+def delete_row():
+    try:
+        row_data = request.json  # Get the row data from the request
+
+        file_path = 'ipoinput.csv'  # Only allow deleting from input file
+        if not os.path.exists(file_path):
+            return jsonify({"success": False, "error": "File not found"}), 404
+
+        df = pd.read_csv(file_path, encoding='windows-1252')
+
+        # Find and drop the row (matching all values)
+        match = (df == pd.Series(row_data)).all(axis=1)
+        df = df[~match]  # Keep rows that don't match
+
+        df.to_csv(file_path, index=False, encoding='windows-1252')  # Save updated file
+
+        return jsonify({"success": True})
+    
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import subprocess
 
 @sock.route('/ws1')
