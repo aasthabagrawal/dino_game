@@ -1,188 +1,108 @@
-@sock.route('/ws')
-def websocket_handler(ws):
-    try:
-        # Step 1: Get name and Employee ID
-        ws.send(">> Enter your name: ")
-        name = ws.receive().strip()
+function setupWebSocket(route) {
+  // Close any existing WebSocket connection
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.onclose = null;
+    socket.onerror = null;
+    socket.onmessage = null;
+    socket.close();
+  }
 
-        ws.send(">> Enter your employee ID: ")
-        emp_id = ws.receive().strip()
+  // Reset the terminal
+  term.reset();
+  inputBuffer = "";
 
-        # Step 2: Start backend process
-        process = subprocess.Popen(
-            ["python", "backend.py"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
+  term.write("Connecting to backend...\r\n");
 
-        # Step 3: Send Name and Employee ID to Backend
-        backend_input = f"{name},{emp_id}\n"
-        process.stdin.write(backend_input)
-        process.stdin.flush()
+  try {
+    console.log(`Attempting to connect to: ws://${location.host}/${route}`);
 
-        # Step 4: Read backend response (until it asks for Y/N)
-        while True:
-            line = process.stdout.readline().strip()
-            if line:
-                ws.send(line + "\n")  # Send each output line to WebSocket
-                ws.send(f"🔍 Debug: Received from backend -> {line}\n")
-            if "Do you need the post IPO message? Type Y/N:" in line:
-                break  # Backend is now expecting Y/N input
+    // Establish a new WebSocket connection with explicit protocols
+    socket = new WebSocket(`ws://${location.host}/${route}`);
 
-        # Step 5: Get user input for IPO message
-        check = ws.receive().strip()
-        ws.send(f"Received IPO input from WebSocket: {check}\n")  # Debug log
-        process.stdin.write(f"{check}\n")
-        process.stdin.flush()
-        ws.send("Sent IPO input to backend.\n")
+    console.log("WebSocket created, readyState:", socket.readyState);
 
-        # Step 6: Read remaining backend output
-        while True:
-            line = process.stdout.readline().strip()
-            if line:
-                ws.send(line + "\n")  # Send output to WebSocket
-                ws.send(f"🔍 Debug: Backend output -> {line}\n")  # Debug log
-                if "enter ipo:" in line.lower():  
-                    break  # Wait until backend asks for IPO symbol
+    socket.onopen = () => {
+      console.log("WebSocket connection opened successfully");
+      term.write(
+        "Connection established. Please enter your details below:\r\n"
+      );
 
-        ipo = ws.receive().strip()
-        process.stdin.write(f"{ipo}\n")
-        process.stdin.flush()
+      // Remove the previous input handler, if any
+      if (inputHandler) {
+        // If your terminal library uses a different method, adjust this
+        try {
+          if (typeof inputHandler === "function") {
+            // Some libraries use this pattern
+            term.onData(inputHandler, true); // Remove the handler
+          } else if (inputHandler.dispose) {
+            // xterm.js uses this pattern
+            inputHandler.dispose();
+          }
+        } catch (e) {
+          console.error("Error removing input handler:", e);
+        }
+      }
 
-        while True:
-            line = process.stdout.readline().strip()
-            if line:
-                ws.send(line + "\n")
-                if "Enter user1: " in line:
-                    break
+      // Define the input handler
+      const handleInput = (data) => {
+        if (data === "\r") {
+          console.log("Sending data:", inputBuffer);
+          try {
+            // Explicitly send as text
+            socket.send(inputBuffer);
+            console.log("Data sent successfully");
+          } catch (e) {
+            console.error("Error sending data:", e);
+            term.write(`\r\nError sending data: ${e.message}\r\n`);
+          }
+          inputBuffer = "";
+          term.write("\r\n");
+        } else if (data === "\u007F") {
+          if (inputBuffer.length > 0) {
+            inputBuffer = inputBuffer.slice(0, -1);
+            term.write("\b \b");
+          }
+        } else {
+          inputBuffer += data;
+          term.write(data);
+        }
+      };
 
-        user1 = ws.receive().strip()
-        ws.send(f"✅ Received user1 input: '{user1}'\n")  
-        process.stdin.write(f"{user1}\n")
-        process.stdin.flush()
+      // Store the input handler - adapt this based on your terminal library
+      inputHandler = term.onData(handleInput);
+    };
 
-        while True:
-            line = process.stdout.readline().strip()
-            if line:
-                ws.send(line + "\n")  
-                if "Enter user2:" in line:
-                    break  
+    socket.onmessage = (event) => {
+      console.log("Received message type:", typeof event.data);
+      console.log("Received message:", event.data);
 
-        # Step 11: Get `user2` input
-        user2 = ws.receive().strip()
-        ws.send(f"✅ Received user2 input: '{user2}'\n")  
-        process.stdin.write(f"{user2}\n")
-        process.stdin.flush()
+      try {
+        term.write(event.data);
+      } catch (e) {
+        console.error("Error writing to terminal:", e);
+        term.write(`\r\nError displaying message: ${e.message}\r\n`);
+      }
+    };
 
-            if process.poll() is not None:
-                break  # Exit loop when the process ends
+    socket.onclose = (event) => {
+      console.log("WebSocket closed:", event.code, event.reason);
+      term.write(
+        `\r\nConnection closed. Code: ${event.code}, Reason: ${
+          event.reason || "None"
+        }\r\n`
+      );
+    };
 
-        # Step 7: Read and send errors (if any)
-        error_output = process.stderr.read().strip()
-        if error_output:
-            ws.send(f"Error: {error_output}\n")
+    socket.onerror = (error) => {
+      console.error("WebSocket error:", error);
+      term.write(`\r\nWebSocket Error: ${error}\r\n`);
+    };
+  } catch (error) {
+    console.error("Connection setup error:", error);
+    term.write(`\r\nFailed to connect: ${error.message}\r\n`);
+  }
+}
 
-        # Close process properly
-        process.stdin.close()
-        process.stdout.close()
-        process.stderr.close()
-        process.wait()
-
-    except Exception as e:
-        ws.send(f"WebSocket Error: {str(e)}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-@sock.route('/ws')
-def websocket_handler(ws):
-    try:
-        # Step 1: Get name and Employee ID
-        ws.send(">> Enter your name: ")
-        name = ws.receive().strip()
-
-        ws.send(">> Enter your employee ID: ")
-        emp_id = ws.receive().strip()
-
-        # Step 2: Start backend process
-        process = subprocess.Popen(
-            ["python", "backend.py"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-
-        # Step 3: Send Name and Employee ID to Backend
-        backend_input = f"{name},{emp_id}\n"
-        process.stdin.write(backend_input)
-        process.stdin.flush()
-
-        # Step 4: Read backend response (until it asks for Y/N)
-        while True:
-            line = process.stdout.readline().strip()
-            if line:
-                ws.send(line + "\n")  # Send each output line to WebSocket
-                ws.send(f"🔍 Debug: Received from backend -> {line}\n")
-            if "Do you need the post IPO message? Type Y/N:" in line:
-                break  # Backend is now expecting Y/N input
-
-        # Step 5: Get user input for IPO message
-        check = ws.receive().strip()
-        ws.send(f"Received IPO input from WebSocket: {check}\n")  # Debug log
-        process.stdin.write(f"{check}\n")
-        process.stdin.flush()
-        ws.send("Sent IPO input to backend.\n")
-
-        # Step 6: Read remaining backend output
-        while True:
-            line = process.stdout.readline().strip()
-            if line:
-                ws.send(line + "\n")  # Send output to WebSocket
-                ws.send(f"🔍 Debug: Backend output -> {line}\n")  # Debug log
-                if "enter ipo:" in line.lower():  
-                    break  # Wait until backend asks for IPO symbol
-
-        ipo = ws.receive().strip()
-        process.stdin.write(f"{ipo}\n")
-        process.stdin.flush()
-
-        while True:
-            line = process.stdout.readline().stip()
-            if line:
-                ws.send(line + "\n")
-
-            if process.poll() is not None:
-                break  # Exit loop when the process ends
-
-        # Step 7: Read and send errors (if any)
-        error_output = process.stderr.read().strip()
-        if error_output:
-            ws.send(f"Error: {error_output}\n")
-
-        # Close process properly
-        process.stdin.close()
-        process.stdout.close()
-        process.stderr.close()
-        process.wait()
-
-    except Exception as e:
-        ws.send(f"WebSocket Error: {str(e)}")
 
 
 const dino = document.getElementById("dino");
