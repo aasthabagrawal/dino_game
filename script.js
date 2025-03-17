@@ -144,86 +144,119 @@ setInterval(() => {
 
 
 
-@app.route('/get_csv')
-def get_csv():
-    file_type = request.args.get('file')
-
-    # Determine which file to fetch
-    file_path = 'ipoinput.csv' if file_type == 'input' else 'ipooutput.csv' if file_type == 'output' else None
-
-    if not file_path or not os.path.exists(file_path):
-        return "<p style='color:red;'>CSV file not found</p>", 404
-
+@sock.route('/ws')
+def websocket_handler(ws):
     try:
-        # Load the CSV file
-        df = pd.read_csv(file_path, encoding='windows-1252')
-
-        # Standardize and clean column names
-        df.columns = df.columns.str.strip().str.lower()
-
-        # Ensure the 'IPO Date' column exists before sorting
-        if 'ipo date' in df.columns:
-            # Parse dates in the 'IPO Date' column
-            df['ipo date'] = pd.to_datetime(df['ipo date'], format='%m/%d/%Y', errors='coerce')
-
-            # Drop rows where 'IPO Date' couldn't be parsed
-            df = df.dropna(subset=['ipo date'])       
-
-            # Sort by IPO Date in descending order
-            df = df.sort_values(by='ipo date', ascending=False)
-
-            # Convert back to MM/DD/YYYY before returning
-            df['ipo date'] = df['ipo date'].dt.strftime('%m/%d/%Y')
-
-        # Add a "Submit" column only for the input file
-        if file_type == 'input':
-            df['Action'] = df.apply(lambda row: f"""
-                <button onclick="triggerPreIPO('{row.to_json()}')">Submit</button>
-            """, axis=1)
-
-
-        # Return the DataFrame as an HTML table
-        return df.to_html(classes='table table-striped', index=False,escape=False)
+        # Step 1: Get name and Employee ID
+        ws.send(">> Enter your name: ")
+        name = ws.receive().strip()
+        
+        ws.send(">> Enter your employee ID: ")
+        emp_id = ws.receive().strip()
+        
+        # Step 2: Start backend process
+        process = subprocess.Popen(
+            ["python", "-u", "backend.py"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1
+        )
+        
+        # Step 3: Send Name and Employee ID to Backend
+        backend_input = f"{name},{emp_id}\n"
+        process.stdin.write(backend_input)
+        process.stdin.flush()
+        
+        while True:  # Iterative loop for multiple IPO checks
+            # Step 4: Read backend response until IPO confirmation prompt
+            while True:
+                line = process.stdout.readline().strip()
+                if line:
+                    ws.send(line + "\n")
+                if "Do you need to post ipo message? Type Y/N:" in line:
+                    break  # Backend is now expecting Y/N input
+            
+            # Check if process ended
+            if process.poll() is not None:
+                break
+                
+            # Step 5: Get IPO confirmation input (loop until valid input)
+            while True:
+                check = ws.receive().strip().upper()
+                if check in ["Y", "YES", "N", "NO"]:
+                    process.stdin.write(f"{check}\n")
+                    process.stdin.flush()
+                    break  # Valid input, exit loop
+                else:
+                    ws.send("Invalid input. Please type Y or N.\n")
+            
+            if check in ["N", "NO"]:
+                # Wait for upload_csv() to complete
+                while True:
+                    line = process.stdout.readline().strip()
+                    if line:
+                        ws.send(line + "\n")
+                    if process.poll() is not None:
+                        break
+                break  # Exit main loop
+            
+            # Step 6: Wait for backend to ask for IPO
+            while True:
+                line = process.stdout.readline().strip()
+                if line:
+                    ws.send(line + "\n")
+                if "enter ipo:" in line:
+                    break  # Backend is now expecting IPO input
+            
+            # Step 7: Get IPO input
+            ipo = ws.receive().strip()
+            process.stdin.write(f"{ipo}\n")
+            process.stdin.flush()
+            
+            # Step 8: Read response until backend function starts
+            while True:
+                line = process.stdout.readline().strip()
+                if not line and process.poll() is not None:
+                    break
+                if line:
+                    ws.send(line + "\n")
+                if "HELLO" in line:
+                    break  # Backend function `result(ipo)` has started
+            
+            # Step 9: Get user input
+            ws.send(">> Enter user1: ")
+            user1 = ws.receive().strip()
+            
+            ws.send(">> Enter user2: ")
+            user2 = ws.receive().strip()
+            
+            ws.send(">> Enter user3: ")
+            user3 = ws.receive().strip()
+            
+            # Step 10: Send user inputs to backend
+            process.stdin.write(f"{user1},{user2},{user3}\n")
+            process.stdin.flush()
+        
+        # Step 11: Read any remaining backend responses
+        while True:
+            line = process.stdout.readline().strip()
+            if line:
+                ws.send(line + "\n")
+            if process.poll() is not None:
+                break
+        
+        # Step 12: Read any error messages
+        error_output = process.stderr.read().strip()
+        if error_output:
+            ws.send(f"Error: {error_output}\n")
+        
+        # Close process properly
+        process.stdin.close()
+        process.stdout.close()
+        process.stderr.close()
+        process.wait()
     
     except Exception as e:
-        return f"<p style='color:red;'>Error reading CSV: {e}</p>", 500
-
-
-
-
-from flask import jsonify
-import json
-import overmart  # Import the overmart module
-
-@app.route('/trigger_preipo', methods=['POST'])
-def trigger_preipo():
-    try:
-        row_data = request.get_json()  # Get row data as JSON
-        row_dict = json.loads(row_data)  # Convert JSON string to dictionary
-
-        # Pass the row data to the preipo function in overmart.py
-        result = overmart.preipo(row_dict)
-
-        return jsonify({"message": "PreIPO triggered successfully!", "result": result})
-    
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-function triggerPreIPO(rowData) {
-    fetch('/trigger_preipo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: rowData // Send row data as JSON
-    })
-    .then(response => response.text())
-    .then(data => alert(data))
-    .catch(error => alert('Error triggering preIPO: ' + error));
-}
-def preipo(row):
-    print("Processing PreIPO for:", row)
-    return f"PreIPO process started for {row.get('symbol', 'Unknown')}"
-
-
-
-
-
+        ws.send(f"WebSocket Error: {str(e)}\n")
