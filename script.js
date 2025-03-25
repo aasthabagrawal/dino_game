@@ -1,107 +1,309 @@
-function setupWebSocket(route) {
-  // Close any existing WebSocket connection
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    socket.onclose = null;
-    socket.onerror = null;
-    socket.onmessage = null;
-    socket.close();
+@app.route('/delete_csv_row', methods=['POST'])
+def delete_csv_row():
+    try:
+        # Get the request data
+        data = request.get_json()
+        file_path = data.get('file')
+        row_data = data.get('rowData')
+
+        # Validate input
+        if not file_path or not row_data:
+            return jsonify({'success': False, 'message': 'Invalid input'}), 400
+
+        # Read the CSV file
+        df = pd.read_csv(file_path, encoding='windows-1252')
+        
+        # Standardize column names
+        df.columns = df.columns.str.strip().str.lower()
+
+        # Find and remove the matching row
+        # This approach tries to match all provided key-value pairs
+        mask = pd.Series(True, index=df.index)
+        for key, value in row_data.items():
+            # Handle case-insensitive column names and string comparisons
+            key = key.lower().strip()
+            if key in df.columns:
+                mask &= (df[key].astype(str) == str(value))
+        
+        # Remove the matching row(s)
+        df_filtered = df[~mask]
+
+        # Save the updated DataFrame back to CSV
+        df_filtered.to_csv(file_path, index=False, encoding='windows-1252')
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        print(f"Error deleting row: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+
+@app.route('/edit_csv_row', methods=['POST'])
+def edit_csv_row():
+    try:
+        # Get the request data
+        data = request.get_json()
+        file_path = data.get('file')
+        row_identifier = data.get('row_identifier')  # How to identify the row
+        updated_data = data.get('updated_data')      # New data for the row
+        
+        # Validate input
+        if not file_path or not row_identifier or not updated_data:
+            return jsonify({'success': False, 'message': 'Invalid input'}), 400
+        
+        # Read the CSV file
+        df = pd.read_csv(file_path, encoding='windows-1252')
+        
+        # Standardize column names
+        df.columns = df.columns.str.strip().str.lower()
+        
+        # Find the row to edit
+        mask = pd.Series(True, index=df.index)
+        for key, value in row_identifier.items():
+            key = key.lower().strip()
+            if key in df.columns:
+                mask &= (df[key].astype(str) == str(value))
+        
+        # Update the row with new data
+        if mask.any():
+            for key, value in updated_data.items():
+                key = key.lower().strip()
+                if key in df.columns:
+                    df.loc[mask, key] = value
+            
+            # Save the updated DataFrame back to CSV
+            df.to_csv(file_path, index=False, encoding='windows-1252')
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'message': 'Row not found'}), 404
+            
+    except Exception as e:
+        print(f"Error editing row: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+ .btn{
+    padding: 6px 12px;
+    margin-right: 8px;
+    border: none;
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
   }
 
-  // Reset the terminal
-  term.reset();
-  inputBuffer = "";
+  .btn-edit {
+    background-color: #007BFF; /* blue */
+  }
+  
+  .btn-delete {
+    background-color: purple; /* red */
+  }
 
-  term.write("Connecting to backend...\r\n");
+  .btn-save{
+    background-color: #007BFF;
+  }
 
-  try {
-    console.log(`Attempting to connect to: ws://${location.host}/${route}`);
+  .btn-cancel{
+    background-color: #28a745;
+  }
 
-    // Establish a new WebSocket connection with explicit protocols
-    socket = new WebSocket(`ws://${location.host}/${route}`);
 
-    console.log("WebSocket created, readyState:", socket.readyState);
 
-    socket.onopen = () => {
-      console.log("WebSocket connection opened successfully");
-      term.write(
-        "Connection established. Please enter your details below:\r\n"
-      );
+ function updateTable() {
+      if (!currentFile) return;
 
-      // Remove the previous input handler, if any
-      if (inputHandler) {
-        // If your terminal library uses a different method, adjust this
-        try {
-          if (typeof inputHandler === "function") {
-            // Some libraries use this pattern
-            term.onData(inputHandler, true); // Remove the handler
-          } else if (inputHandler.dispose) {
-            // xterm.js uses this pattern
-            inputHandler.dispose();
-          }
-        } catch (e) {
-          console.error("Error removing input handler:", e);
-        }
-      }
+      fetch(`/get_csv?file=${currentFile}`)
+        .then(response => response.text())
+        .then(data => {
+          let displayDiv = document.getElementById('csv_display');
 
-      // Define the input handler
-      const handleInput = (data) => {
-        if (data === "\r") {
-          console.log("Sending data:", inputBuffer);
-          try {
-            // Explicitly send as text
-            socket.send(inputBuffer);
-            console.log("Data sent successfully");
-          } catch (e) {
-            console.error("Error sending data:", e);
-            term.write(`\r\nError sending data: ${e.message}\r\n`);
-          }
-          inputBuffer = "";
-          term.write("\r\n");
-        } else if (data === "\u007F") {
-          if (inputBuffer.length > 0) {
-            inputBuffer = inputBuffer.slice(0, -1);
-            term.write("\b \b");
-          }
+          displayDiv.innerHTML = data;
+          displayDiv.style.display = 'block';
+          
+          setTimeout(() => {
+  updateRecordCount();
+
+  if (currentFile === 'output') {
+    addSymbolFilter();
+    addDateFilter();
+  }
+
+  const displayDiv = document.getElementById('csv_display');
+  const table = displayDiv.querySelector('table');
+  if (!table) return;
+
+  const headerCells = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent.trim().toLowerCase());
+  const rows = table.querySelectorAll('tbody tr');
+  if(currentFile=='input'){
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('td');
+    const rowData = {};
+
+    // Dynamically map row data based on headers
+    headerCells.forEach((header, index) => {
+      rowData[header] = cells[index]?.textContent.trim();
+    });
+
+    // Create Edit/Delete buttons
+    
+    const actionTd = document.createElement('td');
+    const editButton = document.createElement('button');
+    editButton.className = 'btn btn-edit';
+    editButton.textContent = 'Edit';
+    editButton.setAttribute('data-row', JSON.stringify(rowData));
+    editButton.onclick = () => editRow(editButton);
+    
+    actionTd.appendChild(editButton);
+
+    const deleteButton = document.createElement('button');
+    deleteButton.className = 'btn btn-delete';
+    deleteButton.textContent = 'Delete';
+    deleteButton.setAttribute('data-row', JSON.stringify(rowData));
+    deleteButton.onclick = () => deleteRow(deleteButton);
+    actionTd.appendChild(deleteButton);
+
+    row.appendChild(actionTd);
+  });
+  }
+}, 100);
+        
+        })
+      
+        .catch(error => {
+          document.getElementById('csv_display').innerHTML = `<p style="color:red;">Error loading data: ${error}</p>`;
+          document.getElementById('record_count').textContent = '0';
+        });
+    }
+
+    function deleteRow(button) {
+    const rowData = JSON.parse(button.getAttribute('data-row'));
+
+    // Send delete request to the server
+    fetch('/delete_csv_row', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            file: 'ipoinput.csv',
+            rowData: rowData
+        })
+    })
+    .then(response => {
+        console.log('Response status:', response.status);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Response data:', data);
+        if (data.success) {
+            // Remove the row from the table
+            button.closest('tr').remove();
+            
+            // Update record count
+            updateRecordCount();
         } else {
-          inputBuffer += data;
-          term.write(data);
+            alert('Failed to delete row: ' + data.message);
         }
-      };
-
-      // Store the input handler - adapt this based on your terminal library
-      inputHandler = term.onData(handleInput);
-    };
-
-    socket.onmessage = (event) => {
-      console.log("Received message type:", typeof event.data);
-      console.log("Received message:", event.data);
-
-      try {
-        term.write(event.data);
-      } catch (e) {
-        console.error("Error writing to terminal:", e);
-        term.write(`\r\nError displaying message: ${e.message}\r\n`);
-      }
-    };
-
-    socket.onclose = (event) => {
-      console.log("WebSocket closed:", event.code, event.reason);
-      term.write(
-        `\r\nConnection closed. Code: ${event.code}, Reason: ${
-          event.reason || "None"
-        }\r\n`
-      );
-    };
-
-    socket.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      term.write(`\r\nWebSocket Error: ${error}\r\n`);
-    };
-  } catch (error) {
-    console.error("Connection setup error:", error);
-    term.write(`\r\nFailed to connect: ${error.message}\r\n`);
-  }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while deleting the row');
+    });
 }
+window.deleteRow = deleteRow;
+
+
+
+
+
+
+function editRow(button) {
+  const row = button.closest('tr');
+  const rowData = JSON.parse(button.getAttribute('data-row'));
+
+  // Disable the Edit button while editing
+  button.disabled = true;
+  button.textContent = 'Editing...';
+
+  const cells = row.querySelectorAll('td');
+  const inputFields = [];
+
+  // Replace each cell (except last one with buttons) with input fields
+  Object.entries(rowData).forEach(([key, value], index) => {
+    const cell = cells[index];
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = value;
+    input.style.width = '100%';
+    cell.innerHTML = '';
+    cell.appendChild(input);
+    inputFields.push({ key, input });
+  });
+
+  // Replace buttons with Save + Cancel
+  const actionTd = cells[cells.length - 1];
+  actionTd.innerHTML = '';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'btn btn-save';
+  saveBtn.textContent = 'Save';
+  saveBtn.onclick = () => {
+    const updatedData = {};
+    inputFields.forEach(({ key, input }) => {
+      updatedData[key] = input.value;
+    });
+
+    fetch('/edit_csv_row', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file: 'ipoinput.csv',
+        row_identifier: rowData,
+        updated_data: updatedData
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert('Row updated successfully!');
+        fetchCSV(currentFile); // reload table
+      } else {
+        alert('Failed to update row: ' + data.message);
+      }
+    })
+    .catch(error => {
+      console.error('Edit error:', error);
+      alert('An error occurred while editing the row');
+    });
+  };
+
+  const cancelBtn = document.createElement('button');
+
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.className = 'btn btn-cancel';
+  cancelBtn.onclick = () => {
+    fetchCSV(currentFile); // reload to reset
+  };
+
+  actionTd.appendChild(saveBtn);
+  actionTd.appendChild(cancelBtn);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -140,123 +342,3 @@ setInterval(() => {
     location.reload();
   }
 }, 50);
-
-
-
-
-@sock.route('/ws')
-def websocket_handler(ws):
-    try:
-        # Step 1: Get name and Employee ID
-        ws.send(">> Enter your name: ")
-        name = ws.receive().strip()
-        
-        ws.send(">> Enter your employee ID: ")
-        emp_id = ws.receive().strip()
-        
-        # Step 2: Start backend process
-        process = subprocess.Popen(
-            ["python", "-u", "backend.py"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1
-        )
-        
-        # Step 3: Send Name and Employee ID to Backend
-        backend_input = f"{name},{emp_id}\n"
-        process.stdin.write(backend_input)
-        process.stdin.flush()
-        
-        while True:  # Iterative loop for multiple IPO checks
-            # Step 4: Read backend response until IPO confirmation prompt
-            while True:
-                line = process.stdout.readline().strip()
-                if line:
-                    ws.send(line + "\n")
-                if "Do you need to post ipo message? Type Y/N:" in line:
-                    break  # Backend is now expecting Y/N input
-            
-            # Check if process ended
-            if process.poll() is not None:
-                break
-                
-            # Step 5: Get IPO confirmation input (loop until valid input)
-            while True:
-                check = ws.receive().strip().upper()
-                if check in ["Y", "YES", "N", "NO"]:
-                    process.stdin.write(f"{check}\n")
-                    process.stdin.flush()
-                    break  # Valid input, exit loop
-                else:
-                    ws.send("Invalid input. Please type Y or N.\n")
-            
-            if check in ["N", "NO"]:
-                # Wait for upload_csv() to complete
-                while True:
-                    line = process.stdout.readline().strip()
-                    if line:
-                        ws.send(line + "\n")
-                    if process.poll() is not None:
-                        break
-                break  # Exit main loop
-            
-            # Step 6: Wait for backend to ask for IPO
-            while True:
-                line = process.stdout.readline().strip()
-                if line:
-                    ws.send(line + "\n")
-                if "enter ipo:" in line:
-                    break  # Backend is now expecting IPO input
-            
-            # Step 7: Get IPO input
-            ipo = ws.receive().strip()
-            process.stdin.write(f"{ipo}\n")
-            process.stdin.flush()
-            
-            # Step 8: Read response until backend function starts
-            while True:
-                line = process.stdout.readline().strip()
-                if not line and process.poll() is not None:
-                    break
-                if line:
-                    ws.send(line + "\n")
-                if "HELLO" in line:
-                    break  # Backend function `result(ipo)` has started
-            
-            # Step 9: Get user input
-            ws.send(">> Enter user1: ")
-            user1 = ws.receive().strip()
-            
-            ws.send(">> Enter user2: ")
-            user2 = ws.receive().strip()
-            
-            ws.send(">> Enter user3: ")
-            user3 = ws.receive().strip()
-            
-            # Step 10: Send user inputs to backend
-            process.stdin.write(f"{user1},{user2},{user3}\n")
-            process.stdin.flush()
-        
-        # Step 11: Read any remaining backend responses
-        while True:
-            line = process.stdout.readline().strip()
-            if line:
-                ws.send(line + "\n")
-            if process.poll() is not None:
-                break
-        
-        # Step 12: Read any error messages
-        error_output = process.stderr.read().strip()
-        if error_output:
-            ws.send(f"Error: {error_output}\n")
-        
-        # Close process properly
-        process.stdin.close()
-        process.stdout.close()
-        process.stderr.close()
-        process.wait()
-    
-    except Exception as e:
-        ws.send(f"WebSocket Error: {str(e)}\n")
