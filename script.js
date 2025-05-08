@@ -1,3 +1,149 @@
+@app.route('/add_csv_row', methods=['POST'])
+def add_csv_row():
+    try:
+        data = request.get_json()
+        label = data.get('file')
+        new_row = data.get('new_row')  # ← this was missing
+
+        file_path = {
+            'input': 'ipoinput.csv',
+            'output': 'ipooutput.csv'
+        }.get(label)
+
+        if not file_path or not os.path.exists(file_path):
+            return jsonify({'success': False, 'message': 'File not found'}), 404
+
+        df = pd.read_csv(file_path, encoding='windows-1252')
+        df.columns = df.columns.str.strip().str.lower()
+
+        # Ensure keys match columns
+        new_row_cleaned = {k.lower().strip(): v for k, v in new_row.items()}
+        new_row_series = pd.Series(new_row_cleaned)
+
+        df = pd.concat([df, pd.DataFrame([new_row_series])], ignore_index=True)
+        df.to_csv(file_path, index=False, encoding='windows-1252')
+
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+
+const headerCells = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent.trim().toLowerCase());
+
+  // Add "Actions" header if not already added
+const theadRow = table.querySelector('thead tr');
+const actionsHeader = document.createElement('th');
+actionsHeader.textContent = 'Actions';
+actionsHeader.style.textAlign = 'center';
+
+const addBtn = document.createElement('button');
+addBtn.className = 'btn btn-add';
+addBtn.textContent = 'Add New Row';
+addBtn.style.color='white';
+addBtn.style.border=2;
+addBtn.style.backgroundColor='red';
+addBtn.onclick = () => addNewInlineRow(headerCells, table);
+
+actionsHeader.appendChild(document.createElement('br')); // line break
+actionsHeader.appendChild(addBtn);
+theadRow.appendChild(actionsHeader);
+
+  const rows = table.querySelectorAll('tbody tr');
+  if(currentFile=='input'){
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('td');
+    const rowData = {};
+
+    // Dynamically map row data based on headers
+    headerCells.forEach((header, index) => {
+      rowData[header] = cells[index]?.textContent.trim();
+    });
+
+    // Create Edit/Delete buttons
+
+
+
+
+
+
+
+       function addNewInlineRow(headerCells, table) {
+  const tbody = table.querySelector('tbody');
+  const newRow = document.createElement('tr');
+
+  // Create editable cells for each column
+  headerCells.forEach(col => {
+    const td = document.createElement('td');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = col;
+    input.className = 'inline-input';
+    td.appendChild(input);
+    newRow.appendChild(td);
+  });
+
+  // Action buttons: Save + Cancel
+  const actionTd = document.createElement('td');
+  
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.className = 'btn btn-save';
+  saveBtn.onclick = () => {
+    const inputs = newRow.querySelectorAll('input');
+    const newRowData = {};
+    headerCells.forEach((col, idx) => {
+      newRowData[col] = inputs[idx].value.trim();
+    });
+
+    // Call backend to add this row
+    fetch('/add_csv_row', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file: currentFile,
+        new_row: newRowData
+      })
+    })
+    .then(res => res.json())
+    .then(result => {
+      if (result.success) {
+        updateTable();  // Refresh the table
+      } else {
+        alert('Error adding row: ' + result.message);
+      }
+    })
+    .catch(err => {
+      alert('Request failed: ' + err);
+    });
+  };
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.className = 'btn btn-cancel';
+  cancelBtn.onclick = () => newRow.remove();
+
+  actionTd.appendChild(saveBtn);
+  actionTd.appendChild(cancelBtn);
+  newRow.appendChild(actionTd);
+
+  tbody.appendChild(newRow);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @app.route('/delete_csv_row', methods=['POST'])
 def delete_csv_row():
     try:
