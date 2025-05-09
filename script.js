@@ -2,6 +2,8 @@ export const processAlerts = (data) => {
   let open = 0;
   let closed = 0;
   const alertMap = new Map();
+  const openTitles = [];
+  const unmatchedFinalUpdates = [];
 
   const normalizeTitle = (title = '') => {
     return title
@@ -21,12 +23,12 @@ export const processAlerts = (data) => {
     alerts = data;
   } else {
     console.warn("❌ No valid data found");
-    return { open, closed };
+    return { open, closed, openTitles, unmatchedFinalUpdates };
   }
 
   if (!alerts || !Array.isArray(alerts)) {
     console.warn("❌ No valid alerts array found");
-    return { open, closed };
+    return { open, closed, openTitles, unmatchedFinalUpdates };
   }
 
   console.log(`🔎 Total alerts fetched: ${alerts.length}`);
@@ -61,21 +63,24 @@ export const processAlerts = (data) => {
     }
   });
 
-  // Second pass: Count open and closed, log issues
+  // Second pass: Count open and closed, log mismatches
   for (const [baseTitle, status] of alertMap.entries()) {
     if (status.hasBase && status.hasFinalUpdate) {
       closed++;
     } else if (status.hasBase) {
       open++;
-    } else if (status.hasFinalUpdate && !status.hasBase) {
-      console.warn(`❗ Final update without base alert: "${baseTitle}"`);
-      console.warn(`    Titles seen:`, status.originalTitles);
+      openTitles.push(baseTitle);
+      console.warn(`🔓 OPEN ALERT: "${baseTitle}" (no final update found)`);
+    } else if (status.hasFinalUpdate) {
+      unmatchedFinalUpdates.push(baseTitle);
+      console.warn(`❗ UNMATCHED FINAL UPDATE: "${baseTitle}" (no base alert seen)`);
     }
   }
 
   console.log(`✅ Final results — OPEN: ${open}, CLOSED: ${closed}`);
-  return { open, closed };
+  return { open, closed, openTitles, unmatchedFinalUpdates };
 };
+
 
 
 
