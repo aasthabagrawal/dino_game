@@ -1,9 +1,12 @@
+import { get as levenshtein } from 'fast-levenshtein';
+
 export const processAlerts = (data) => {
   let open = 0;
   let closed = 0;
   const alertMap = new Map();
   const openTitles = [];
   const unmatchedFinalUpdates = [];
+  const THRESHOLD = 5;
 
   const normalizeTitle = (title = '') => {
     return title
@@ -63,17 +66,28 @@ export const processAlerts = (data) => {
     }
   });
 
-  // Second pass: Count open and closed, log mismatches
+  // Second pass: Count open and closed, apply Levenshtein for final updates
   for (const [baseTitle, status] of alertMap.entries()) {
     if (status.hasBase && status.hasFinalUpdate) {
       closed++;
-    } else if (status.hasBase) {
+    } else if (status.hasBase && !status.hasFinalUpdate) {
       open++;
       openTitles.push(baseTitle);
       console.warn(`🔓 OPEN ALERT: "${baseTitle}" (no final update found)`);
-    } else if (status.hasFinalUpdate) {
-      unmatchedFinalUpdates.push(baseTitle);
-      console.warn(`❗ UNMATCHED FINAL UPDATE: "${baseTitle}" (no base alert seen)`);
+    } else if (!status.hasBase && status.hasFinalUpdate) {
+      // Try Levenshtein match
+      const matchedTitle = [...alertMap.keys()].find(otherTitle => {
+        return alertMap.get(otherTitle).hasBase &&
+               levenshtein(baseTitle, otherTitle) <= THRESHOLD;
+      });
+
+      if (matchedTitle) {
+        console.warn(`🤝 Fuzzy match: "${baseTitle}" matched to "${matchedTitle}"`);
+        closed++;
+      } else {
+        unmatchedFinalUpdates.push(baseTitle);
+        console.warn(`❗ UNMATCHED FINAL UPDATE: "${baseTitle}" (no close match found)`);
+      }
     }
   }
 
