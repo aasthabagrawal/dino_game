@@ -1,3 +1,64 @@
+export const processAlerts = (data) => {
+  // Initialize counters and tracking map
+  let open = 0;
+  let closed = 0;
+  
+  // Track alerts by their base name (without "- update X" or "- final update")
+  // Map stores alert IDs to track which specific alerts are open
+  const openAlertMap = new Map();
+  
+  // Validate data structure
+  if (!data || !data.ResponseStatus || !data.ResponseStatus.alerts) {
+    return { open, closed };
+  }
+  
+  // Normalize alerts to array
+  const alerts = Array.isArray(data.ResponseStatus.alerts.alert)
+    ? data.ResponseStatus.alerts.alert
+    : [data.ResponseStatus.alerts.alert];
+  
+  // Process each alert
+  alerts.forEach((alert) => {
+    if (!alert || !alert.title) return;
+    
+    const title = alert.title.trim();
+    const titleLower = title.toLowerCase();
+    const alertId = alert.id || title; // Use ID if available, otherwise use title
+    
+    // Extract the base alert name by removing update suffixes
+    const baseAlertName = extractBaseAlertName(titleLower);
+    
+    // Case 1: High Alert - ABC - Final Update (closing an alert)
+    if (titleLower.includes('high alert') && titleLower.includes('final update')) {
+      if (openAlertMap.has(baseAlertName)) {
+        // Close the alert and increment closed counter
+        openAlertMap.delete(baseAlertName);
+        closed++;
+        // Decrement open counter since we're closing a previously opened alert
+        open--;
+      }
+    }
+    // Case 2: High Alert - ABC (new alert)
+    else if (titleLower.includes('high alert') && !hasUpdateSuffix(titleLower)) {
+      // Only count if this specific base alert name isn't already open
+      if (!openAlertMap.has(baseAlertName)) {
+        openAlertMap.set(baseAlertName, alertId);
+        open++;
+      }
+    }
+    // Case 3: High Alert - ABC - Update X (no change in counters)
+    // This case is handled implicitly by not matching the other conditions
+  });
+  
+  return { open, closed };
+};
+
+
+
+
+
+
+
 @app.route('/add_csv_row', methods=['POST'])
 def add_csv_row():
     try:
