@@ -2,8 +2,9 @@ export const processAlerts = (data) => {
   // Initialize counters and tracking set
   let open = 0;
   let closed = 0;
-  const activeAlerts = new Set();
-  const finalUpdates = []; // Fixed the variable name from finalUpdate to finalUpdates
+  const activeAlerts = new Map(); // Using Map to store title->alertItem for better debugging
+  const finalUpdates = [];
+  const processedAlerts = new Set(); // Track processed alerts to avoid duplicates
   
   // Get the alerts array from data, with proper error handling
   let alerts;
@@ -15,7 +16,7 @@ export const processAlerts = (data) => {
     alerts = data;
   } else {
     console.warn("No valid data found");
-    return { open, closed }; // Fixed to return an object
+    return { open, closed };
   }
   
   // Check if alerts is valid
@@ -24,53 +25,103 @@ export const processAlerts = (data) => {
     return { open, closed };
   }
   
+  // Sort alerts by date if possible to ensure chronological processing
+  try {
+    alerts.sort((a, b) => {
+      const dateA = a.createdDate || a.reportSummary?.createdDate || '';
+      const dateB = b.createdDate || b.reportSummary?.createdDate || '';
+      return new Date(dateA) - new Date(dateB);
+    });
+  } catch (err) {
+    console.warn("Unable to sort alerts by date", err);
+    // Continue with unsorted alerts
+  }
+  
+  // Debug all titles
+  console.log("All alert titles:");
+  alerts.forEach((alert, i) => {
+    const title = alert?.reportSummary?.title || alert?.title || '';
+    if (title.toLowerCase().includes('high alert')) {
+      console.log(`${i}: ${title}`);
+    }
+  });
+  
   // First pass: Process all alerts and collect final updates
-  alerts.forEach((alertItem) => { // Fixed missing parenthesis
+  alerts.forEach((alertItem, index) => {
     // Access title safely with optional chaining
     const title = alertItem?.reportSummary?.title || alertItem?.title || '';
+    const alertId = alertItem?.id || index;
     
     // Skip non-high alerts
     if (!title.toLowerCase().includes('high alert')) {
       return;
     }
     
-    // Extract base title (remove update or final update suffixes)
-    const baseTitle = title.toLowerCase()
-      .replace(/ - final update.*$/i, '')
-      .replace(/ - update\s+#?\d+.*$/i, '')
-      .trim();
+    // Extract base title (remove any type of update suffix)
+    const baseTitle = extractBaseTitle(title);
     
-    console.log(`Processing title: "${title}"`); // Fixed template string
-    console.log(`Base title: "${baseTitle}"`); // Fixed template string
+    console.log(`Processing #${index} title: "${title}"`);
+    console.log(`Base title: "${baseTitle}"`);
     
+    // Handle final updates
     if (title.toLowerCase().includes('final update')) {
-      finalUpdates.push(baseTitle);
-    } else if (!title.toLowerCase().match(/ - update\s+#?\d+/i) && !activeAlerts.has(baseTitle)) {
-      // This is a new high alert without update suffix and not already tracked
-      activeAlerts.add(baseTitle);
+      finalUpdates.push({ baseTitle, alertItem, index });
+    } 
+    // Handle new alerts - any high alert without "update" (not just numeric updates)
+    else if (!title.toLowerCase().includes('update') && !activeAlerts.has(baseTitle)) {
+      activeAlerts.set(baseTitle, { alertItem, index });
       open++;
-      console.log(`Open Title: ${baseTitle}`); // Fixed template string
-    } else {
-      console.log(`Title not added to open: ${title}`); // Fixed template string
+      console.log(`Open Title #${index}: ${baseTitle}`);
+    } 
+    // Handle other cases (mostly updates)
+    else {
+      console.log(`Title #${index} not added to open: ${title}`);
     }
   });
   
+  // Log all active alerts for debugging
+  console.log("\nActive alerts before processing final updates:");
+  activeAlerts.forEach((value, key) => {
+    console.log(`- ${key} (from alert #${value.index})`);
+  });
+  
+  console.log("\nProcessing final updates:");
   // Second pass: Process final updates
-  finalUpdates.forEach((baseTitle) => {
+  finalUpdates.forEach(({ baseTitle, alertItem, index }) => {
+    console.log(`Checking final update #${index} for base title: "${baseTitle}"`);
+    
     if (activeAlerts.has(baseTitle)) {
+      const openAlert = activeAlerts.get(baseTitle);
+      console.log(`Found matching open alert #${openAlert.index}`);
+      
       activeAlerts.delete(baseTitle);
       closed++;
       open--; // Decrease open count as we're closing an alert
-      console.log(`Closed title: ${baseTitle}`); // Fixed template string
+      console.log(`Closed title #${index}: ${baseTitle}`);
     } else {
-      console.log(`Final update found but base title not in active alerts: ${baseTitle}`); // Fixed template string and variable name
+      console.log(`Final update #${index} found but base title not in active alerts: ${baseTitle}`);
+      console.log(`Current active alerts: ${[...activeAlerts.keys()].join(', ')}`);
     }
   });
   
-  console.log(`Final results - open: ${open}, closed: ${closed}`); // Fixed template string
+  console.log(`\nFinal results - open: ${open}, closed: ${closed}`);
   
-  return { open, closed }; // Fixed to return an object instead of (open, closed)
+  return { open, closed };
 };
+
+
+function extractBaseTitle(title) {
+  const lowerTitle = title.toLowerCase();
+  
+  // First remove "final update" suffix
+  let baseTitle = lowerTitle.replace(/\s*-\s*final update.*$/i, '');
+  
+  // Then remove "update X" or just "update" suffix
+  baseTitle = baseTitle.replace(/\s*-\s*update(?:\s+#?\d+)?.*$/i, '');
+  
+  return baseTitle.trim();
+}
+
 
 
 
