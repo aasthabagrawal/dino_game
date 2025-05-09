@@ -20,48 +20,62 @@ export const processAlerts = (data) => {
   } else if (Array.isArray(data)) {
     alerts = data;
   } else {
-    console.warn("No valid data found");
+    console.warn("❌ No valid data found");
     return { open, closed };
   }
 
   if (!alerts || !Array.isArray(alerts)) {
-    console.warn("No valid alerts array found");
+    console.warn("❌ No valid alerts array found");
     return { open, closed };
   }
 
-  // First pass: Build alert map
-  alerts.forEach((alertItem) => {
+  console.log(`🔎 Total alerts fetched: ${alerts.length}`);
+
+  // First pass: Build alert map with debug logs
+  alerts.forEach((alertItem, index) => {
     const title = alertItem?.reportSummary?.title || alertItem?.title || '';
-    if (!/high\s*alert/i.test(title)) return;
+    if (!/high\s*alert/i.test(title)) {
+      console.log(`⚠️ [${index}] Skipped non-high alert: "${title}"`);
+      return;
+    }
 
     const baseTitle = normalizeTitle(title);
     const isFinalUpdate = /final update/i.test(title);
+    const isUpdate = /update\s+#?\d+/i.test(title);
 
     if (!alertMap.has(baseTitle)) {
-      alertMap.set(baseTitle, { hasBase: false, hasFinalUpdate: false });
+      alertMap.set(baseTitle, { hasBase: false, hasFinalUpdate: false, originalTitles: [] });
     }
 
     const record = alertMap.get(baseTitle);
+    record.originalTitles.push(title);
+
     if (isFinalUpdate) {
       record.hasFinalUpdate = true;
-    } else if (!/update\s+#?\d+/i.test(title)) {
+      console.log(`✅ [${index}] Found final update: "${title}" → base: "${baseTitle}"`);
+    } else if (!isUpdate) {
       record.hasBase = true;
+      console.log(`✅ [${index}] Found base alert: "${title}" → base: "${baseTitle}"`);
+    } else {
+      console.log(`ℹ️ [${index}] Ignored intermediate update: "${title}"`);
     }
   });
 
-  // Second pass: Count open and closed
+  // Second pass: Count open and closed, log issues
   for (const [baseTitle, status] of alertMap.entries()) {
     if (status.hasBase && status.hasFinalUpdate) {
       closed++;
     } else if (status.hasBase) {
       open++;
+    } else if (status.hasFinalUpdate && !status.hasBase) {
+      console.warn(`❗ Final update without base alert: "${baseTitle}"`);
+      console.warn(`    Titles seen:`, status.originalTitles);
     }
   }
 
-  console.log(`Final results - open: ${open}, closed: ${closed}`);
+  console.log(`✅ Final results — OPEN: ${open}, CLOSED: ${closed}`);
   return { open, closed };
 };
-
 
 
 
