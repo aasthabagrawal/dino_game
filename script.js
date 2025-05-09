@@ -91,6 +91,18 @@ export const processAlerts = (data) => {
   console.log(`Final results - open: ${open}, closed: ${closed}`);
   return { open, closed };
 };
+function getBaseTitle(title) {
+  // Convert to lowercase for case-insensitive comparison
+  const lowerTitle = title.toLowerCase();
+  
+  // First strip "- final update" suffix if present
+  let baseTitle = lowerTitle.replace(/\s+-\s+final update.*$/i, '');
+  
+  // Then strip "- update" suffix (with or without numbers)
+  baseTitle = baseTitle.replace(/\s+-\s+update.*$/i, '');
+  
+  return baseTitle.trim();
+}
 
 
 
