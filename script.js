@@ -1,57 +1,77 @@
 export const processAlerts = (data) => {
-  // Initialize counters and tracking map
+  // Initialize counters and tracking set
   let open = 0;
   let closed = 0;
+  const activeAlerts = new Set();
+  const finalUpdates = []; // Fixed the variable name from finalUpdate to finalUpdates
   
-  // Track alerts by their base name (without "- update X" or "- final update")
-  // Map stores alert IDs to track which specific alerts are open
-  const openAlertMap = new Map();
+  // Get the alerts array from data, with proper error handling
+  let alerts;
+  if (data && data.ResponseStatus && data.ResponseStatus.alerts) {
+    alerts = Array.isArray(data.ResponseStatus.alerts.alert) 
+      ? data.ResponseStatus.alerts.alert 
+      : [data.ResponseStatus.alerts.alert];
+  } else if (Array.isArray(data)) {
+    alerts = data;
+  } else {
+    console.warn("No valid data found");
+    return { open, closed }; // Fixed to return an object
+  }
   
-  // Validate data structure
-  if (!data || !data.ResponseStatus || !data.ResponseStatus.alerts) {
+  // Check if alerts is valid
+  if (!alerts || !Array.isArray(alerts)) {
+    console.warn("No valid alerts array found");
     return { open, closed };
   }
   
-  // Normalize alerts to array
-  const alerts = Array.isArray(data.ResponseStatus.alerts.alert)
-    ? data.ResponseStatus.alerts.alert
-    : [data.ResponseStatus.alerts.alert];
-  
-  // Process each alert
-  alerts.forEach((alert) => {
-    if (!alert || !alert.title) return;
+  // First pass: Process all alerts and collect final updates
+  alerts.forEach((alertItem) => { // Fixed missing parenthesis
+    // Access title safely with optional chaining
+    const title = alertItem?.reportSummary?.title || alertItem?.title || '';
     
-    const title = alert.title.trim();
-    const titleLower = title.toLowerCase();
-    const alertId = alert.id || title; // Use ID if available, otherwise use title
-    
-    // Extract the base alert name by removing update suffixes
-    const baseAlertName = extractBaseAlertName(titleLower);
-    
-    // Case 1: High Alert - ABC - Final Update (closing an alert)
-    if (titleLower.includes('high alert') && titleLower.includes('final update')) {
-      if (openAlertMap.has(baseAlertName)) {
-        // Close the alert and increment closed counter
-        openAlertMap.delete(baseAlertName);
-        closed++;
-        // Decrement open counter since we're closing a previously opened alert
-        open--;
-      }
+    // Skip non-high alerts
+    if (!title.toLowerCase().includes('high alert')) {
+      return;
     }
-    // Case 2: High Alert - ABC (new alert)
-    else if (titleLower.includes('high alert') && !hasUpdateSuffix(titleLower)) {
-      // Only count if this specific base alert name isn't already open
-      if (!openAlertMap.has(baseAlertName)) {
-        openAlertMap.set(baseAlertName, alertId);
-        open++;
-      }
+    
+    // Extract base title (remove update or final update suffixes)
+    const baseTitle = title.toLowerCase()
+      .replace(/ - final update.*$/i, '')
+      .replace(/ - update\s+#?\d+.*$/i, '')
+      .trim();
+    
+    console.log(`Processing title: "${title}"`); // Fixed template string
+    console.log(`Base title: "${baseTitle}"`); // Fixed template string
+    
+    if (title.toLowerCase().includes('final update')) {
+      finalUpdates.push(baseTitle);
+    } else if (!title.toLowerCase().match(/ - update\s+#?\d+/i) && !activeAlerts.has(baseTitle)) {
+      // This is a new high alert without update suffix and not already tracked
+      activeAlerts.add(baseTitle);
+      open++;
+      console.log(`Open Title: ${baseTitle}`); // Fixed template string
+    } else {
+      console.log(`Title not added to open: ${title}`); // Fixed template string
     }
-    // Case 3: High Alert - ABC - Update X (no change in counters)
-    // This case is handled implicitly by not matching the other conditions
   });
   
-  return { open, closed };
+  // Second pass: Process final updates
+  finalUpdates.forEach((baseTitle) => {
+    if (activeAlerts.has(baseTitle)) {
+      activeAlerts.delete(baseTitle);
+      closed++;
+      open--; // Decrease open count as we're closing an alert
+      console.log(`Closed title: ${baseTitle}`); // Fixed template string
+    } else {
+      console.log(`Final update found but base title not in active alerts: ${baseTitle}`); // Fixed template string and variable name
+    }
+  });
+  
+  console.log(`Final results - open: ${open}, closed: ${closed}`); // Fixed template string
+  
+  return { open, closed }; // Fixed to return an object instead of (open, closed)
 };
+
 
 
 
