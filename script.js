@@ -3,6 +3,123 @@ import { get as levenshtein } from 'fast-levenshtein';
 export const processAlerts = (data) => {
   let open = 0;
   let closed = 0;
+  const THRESHOLD = 5;
+
+  const openTitles = [];
+  const unmatchedFinalUpdates = [];
+  const discrepantAlerts = [];
+
+  const alertMap = new Map();
+
+  const normalizeTitle = (title = '') =>
+    title
+      .toLowerCase()
+      .replace(/[\u2013\u2014-]\s*(final update.*|update\s+#?\d+.*)$/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  // Extract alerts
+  let alerts;
+  if (data?.ResponseStatus?.alerts) {
+    alerts = Array.isArray(data.ResponseStatus.alerts.alert)
+      ? data.ResponseStatus.alerts.alert
+      : [data.ResponseStatus.alerts.alert];
+  } else if (Array.isArray(data)) {
+    alerts = data;
+  } else {
+    console.warn("❌ No valid alert data found");
+    return { open, closed, openTitles, unmatchedFinalUpdates, discrepantAlerts };
+  }
+
+  if (!Array.isArray(alerts)) {
+    console.warn("❌ Alerts is not a valid array");
+    return { open, closed, openTitles, unmatchedFinalUpdates, discrepantAlerts };
+  }
+
+  // First pass: Build alertMap
+  alerts.forEach((alert) => {
+    const rawTitle = alert?.reportSummary?.title || alert?.title || '';
+    if (!/high\s*alert/i.test(rawTitle)) return;
+
+    const baseTitle = normalizeTitle(rawTitle);
+    const isFinal = /final update/i.test(rawTitle);
+    const isIntermediate = /update\s+#?\d+/i.test(rawTitle);
+
+    if (!alertMap.has(baseTitle)) {
+      alertMap.set(baseTitle, {
+        hasBase: false,
+        hasFinalUpdate: false,
+        originalTitles: [],
+      });
+    }
+
+    const entry = alertMap.get(baseTitle);
+    entry.originalTitles.push(rawTitle);
+
+    if (isFinal) {
+      entry.hasFinalUpdate = true;
+    } else if (!isIntermediate) {
+      entry.hasBase = true;
+    }
+  });
+
+  // Second pass: Analyze
+  for (const [baseTitle, { hasBase, hasFinalUpdate }] of alertMap.entries()) {
+    if (hasBase && hasFinalUpdate) {
+      closed++;
+    } else if (hasBase && !hasFinalUpdate) {
+      open++;
+      openTitles.push(baseTitle);
+      discrepantAlerts.push({ type: 'OPEN', title: baseTitle });
+    } else if (!hasBase && hasFinalUpdate) {
+      // Try fuzzy match
+      const match = [...alertMap.entries()].find(([candidateTitle, candidateData]) =>
+        candidateData.hasBase &&
+        levenshtein(baseTitle, candidateTitle) <= THRESHOLD
+      );
+
+      if (match) {
+        closed++;
+        console.log(`🤝 Fuzzy match: "${baseTitle}" ↔ "${match[0]}"`);
+      } else {
+        unmatchedFinalUpdates.push(baseTitle);
+        discrepantAlerts.push({ type: 'UNMATCHED_FINAL_UPDATE', title: baseTitle });
+      }
+    }
+  }
+
+  console.log(`✅ Final counts — OPEN: ${open}, CLOSED: ${closed}`);
+
+  return {
+    open,
+    closed,
+    openTitles,
+    unmatchedFinalUpdates,
+    discrepantAlerts, // 🔥 Combined list to compare where logic fails
+  };
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import { get as levenshtein } from 'fast-levenshtein';
+
+export const processAlerts = (data) => {
+  let open = 0;
+  let closed = 0;
   const alertMap = new Map();
   const openTitles = [];
   const unmatchedFinalUpdates = [];
