@@ -26,15 +26,26 @@ export const processAlerts = (data) => {
     );
   };
 
-  const areTitlesEquivalent = (titleA, titleB) => {
-    const wordsA = getCoreWords(titleA);
-    const wordsB = getCoreWords(titleB);
-    if (wordsA.size !== wordsB.size) return false;
-    for (const word of wordsA) {
-      if (!wordsB.has(word)) return false;
-    }
-    return true;
-  };
+import stringSimilarity from 'string-similarity';
+
+const areTitlesEquivalent = (titleA, titleB) => {
+  const cleanedA = normalizeTitle(titleA);
+  const cleanedB = normalizeTitle(titleB);
+  const similarity = stringSimilarity.compareTwoStrings(cleanedA, cleanedB);
+  return similarity >= 0.85; // Adjust threshold as needed
+};
+
+const normalizeTitle = (title = '') => {
+  return title
+    .toLowerCase()
+    .replace(/update\s*#?\d+.*$/i, '')
+    .replace(/final update.*$/i, '')
+    .replace(/\.[a-z]{2,5}\b/g, '')
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
 
   // Extract alerts from response
   let alerts;
