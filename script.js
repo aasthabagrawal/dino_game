@@ -31,9 +31,20 @@ import stringSimilarity from 'string-similarity';
 const areTitlesEquivalent = (titleA, titleB) => {
   const cleanedA = normalizeTitle(titleA);
   const cleanedB = normalizeTitle(titleB);
-  const similarity = stringSimilarity.compareTwoStrings(cleanedA, cleanedB);
-  return similarity >= 0.85; // Adjust threshold as needed
+
+  const sim = stringSimilarity.compareTwoStrings(cleanedA, cleanedB);
+  if (sim >= 0.85) return true;
+
+  // Fallback to core word match if fuzzy fails
+  const coreA = getCoreWords(titleA);
+  const coreB = getCoreWords(titleB);
+
+  const common = [...coreA].filter(word => coreB.has(word));
+  const matchRatio = common.length / Math.min(coreA.size, coreB.size);
+
+  return matchRatio >= 0.7; // tweak threshold
 };
+
 
 const normalizeTitle = (title = '') => {
   return title
