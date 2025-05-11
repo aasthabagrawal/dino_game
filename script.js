@@ -1,10 +1,12 @@
 import stringSimilarity from 'string-similarity';
 
+import stringSimilarity from 'string-similarity';
+
 export const processAlerts = (data) => {
   let open = 0;
   let closed = 0;
 
-  const activeAlerts = new Set(); // alerts opened but not yet closed
+  const activeAlerts = new Set();
   const finalUpdates = [];
   const everOpened = [];
   const unmatchedFinalUpdates = [];
@@ -54,7 +56,7 @@ export const processAlerts = (data) => {
     return ratio >= 0.7;
   };
 
-  // Extract alerts from response
+  // Extract alerts
   let alerts;
   if (data?.ResponseStatus?.alerts) {
     alerts = Array.isArray(data.ResponseStatus.alerts.alert)
@@ -69,7 +71,6 @@ export const processAlerts = (data) => {
 
   console.log("🔍 Starting Alert Processing...\n");
 
-  // First pass: open alerts and collect finals
   alerts.forEach(alert => {
     const title = alert?.reportSummary?.title || alert?.title || '';
     if (!/high\s*alert/i.test(title)) return;
@@ -77,31 +78,27 @@ export const processAlerts = (data) => {
     const isFinal = /final update/i.test(title);
     const isIntermediate = /update\s*#?\d+/i.test(title) && !isFinal;
 
-    const normalized = normalizeTitle(title);
-    console.log(`[PASS 1] Title: "${title}"`);
-    console.log(`         → Normalized: "${normalized}"`);
-    console.log(`         → Type: ${isFinal ? 'FINAL' : isIntermediate ? 'INTERMEDIATE' : 'BASE'}`);
+    console.log(`[PASS 1] "${title}" → ${isFinal ? 'FINAL' : isIntermediate ? 'INTERMEDIATE' : 'BASE'}`);
 
     if (isFinal) {
       finalUpdates.push(title);
     } else if (!isIntermediate) {
-      const exists = [...activeAlerts].some(t => areTitlesEquivalent(t, title));
-      if (!exists) {
+      const exactMatch = activeAlerts.has(title);
+      const fuzzyMatch = [...activeAlerts].some(t => areTitlesEquivalent(t, title));
+
+      if (!exactMatch && !fuzzyMatch) {
         activeAlerts.add(title);
         everOpened.push(title);
         open++;
-        console.log(`         ✅ Added to activeAlerts`);
+        console.log(`✅ Added to activeAlerts`);
       } else {
-        console.log(`         🔁 Similar alert already tracked`);
+        console.log(`🔁 Skipped (duplicate or similar already exists)`);
       }
-    } else {
-      console.log(`         ⏭️ Skipped intermediate update`);
     }
   });
 
-  console.log("\n🔄 Matching Final Updates...\n");
+  console.log("\n🔄 Processing Final Updates...\n");
 
-  // Second pass: match final updates
   finalUpdates.forEach(finalTitle => {
     const match = [...activeAlerts].find(openTitle =>
       areTitlesEquivalent(openTitle, finalTitle)
@@ -110,26 +107,22 @@ export const processAlerts = (data) => {
       activeAlerts.delete(match);
       closed++;
       open--;
-      console.log(`✅ Final matched: "${finalTitle}" ↔ "${match}"`);
+      console.log(`✅ Closed: "${finalTitle}" matched with "${match}"`);
     } else {
       unmatchedFinalUpdates.push(finalTitle);
       discrepantAlerts.push({ type: 'UNMATCHED_FINAL_UPDATE', title: finalTitle });
-      console.log(`❌ No match for final update: "${finalTitle}"`);
+      console.log(`❌ No match found for final update: "${finalTitle}"`);
     }
   });
 
-  // Add unmatched opens to discrepancies
   [...activeAlerts].forEach(title => {
     discrepantAlerts.push({ type: 'OPEN', title });
   });
 
-  // Final summary
-  console.log("\n📊 Final Summary:");
-  console.log(`🔓 Currently Open Count: ${open}`);
-  console.log(`✅ Closed Count: ${closed}`);
-  console.log(`❌ Unmatched Final Updates Count: ${unmatchedFinalUpdates.length}`);
-  console.log(`🧾 Active Open Alerts:`, [...activeAlerts]);
-  console.log(`🚫 Unmatched Final Titles:`, unmatchedFinalUpdates);
+  console.log("\n📊 Summary:");
+  console.log(`Open Count: ${open}`);
+  console.log(`Closed Count: ${closed}`);
+  console.log(`Unmatched Finals: ${unmatchedFinalUpdates.length}`);
 
   return {
     open,
@@ -140,6 +133,7 @@ export const processAlerts = (data) => {
     discrepantAlerts,
   };
 };
+
 
 
 
