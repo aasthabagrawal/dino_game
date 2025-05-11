@@ -3,6 +3,117 @@ import { get as levenshtein } from 'fast-levenshtein';
 export const processAlerts = (data) => {
   let open = 0;
   let closed = 0;
+
+  const activeAlerts = new Set(); // base titles (not final or updates)
+  const finalUpdates = [];        // titles marked as final update
+  const openTitles = [];
+  const unmatchedFinalUpdates = [];
+  const discrepantAlerts = [];
+
+  const noiseWords = new Set(['high', 'alert', 'reg', 'sci', 'final', 'update']);
+
+  const getCoreWords = (title = '') => {
+    return new Set(
+      title
+        .toLowerCase()
+        .replace(/update\s*#?\d+.*$/i, '')        // Remove update suffix
+        .replace(/final update.*$/i, '')          // Remove final update suffix
+        .replace(/[^\w\s]/g, '')                  // Remove punctuation
+        .split(/\s+/)
+        .filter(word => word.length > 2 && !noiseWords.has(word))
+    );
+  };
+
+  const areTitlesEquivalent = (titleA, titleB) => {
+    const wordsA = getCoreWords(titleA);
+    const wordsB = getCoreWords(titleB);
+    if (wordsA.size !== wordsB.size) return false;
+    for (const word of wordsA) {
+      if (!wordsB.has(word)) return false;
+    }
+    return true;
+  };
+
+  // Extract alerts
+  let alerts;
+  if (data?.ResponseStatus?.alerts) {
+    alerts = Array.isArray(data.ResponseStatus.alerts.alert)
+      ? data.ResponseStatus.alerts.alert
+      : [data.ResponseStatus.alerts.alert];
+  } else if (Array.isArray(data)) {
+    alerts = data;
+  } else {
+    console.warn("❌ No valid alert data found");
+    return { open, closed, openTitles, unmatchedFinalUpdates, discrepantAlerts };
+  }
+
+  // First pass
+  alerts.forEach(alert => {
+    const title = alert?.reportSummary?.title || alert?.title || '';
+    if (!/high\s*alert/i.test(title)) return;
+
+    const isFinal = /final update/i.test(title);
+    const isIntermediate = /update\s*#?\d+/i.test(title) && !isFinal;
+
+    if (isFinal) {
+      finalUpdates.push(title);
+    } else if (!isIntermediate) {
+      // Only pure base alerts go to active list
+      if (![...activeAlerts].some(t => areTitlesEquivalent(t, title))) {
+        activeAlerts.add(title);
+        open++;
+        openTitles.push(title);
+      }
+    }
+  });
+
+  // Second pass
+  finalUpdates.forEach(finalTitle => {
+    const match = [...activeAlerts].find(openTitle =>
+      areTitlesEquivalent(openTitle, finalTitle)
+    );
+    if (match) {
+      activeAlerts.delete(match);
+      closed++;
+      open--;
+    } else {
+      unmatchedFinalUpdates.push(finalTitle);
+      discrepantAlerts.push({ type: 'UNMATCHED_FINAL_UPDATE', title: finalTitle });
+    }
+  });
+
+  // Any remaining in activeAlerts are open
+  [...activeAlerts].forEach(title => {
+    discrepantAlerts.push({ type: 'OPEN', title });
+  });
+
+  console.log(`✅ Final counts — OPEN: ${open}, CLOSED: ${closed}`);
+
+  return {
+    open,
+    closed,
+    openTitles,
+    unmatchedFinalUpdates,
+    discrepantAlerts,
+  };
+};
+
+
+
+
+
+
+
+
+
+
+
+
+import { get as levenshtein } from 'fast-levenshtein';
+
+export const processAlerts = (data) => {
+  let open = 0;
+  let closed = 0;
   const THRESHOLD = 5;
 
   const openTitles = [];
