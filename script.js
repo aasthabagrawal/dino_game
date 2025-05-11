@@ -12,11 +12,16 @@ export const processAlerts = (data) => {
   const alertMap = new Map();
 
   const normalizeTitle = (title = '') =>
-    title
-      .toLowerCase()
-      .replace(/[\u2013\u2014-]\s*(final update.*|update\s+#?\d+.*)$/i, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+  title
+    .toLowerCase()
+    .replace(/high alert/gi, '')        // remove constant prefix
+    .replace(/reg sci/gi, '')           // remove noise/department
+    .replace(/[\u2013\u2014\-:]+/g, '') // remove punctuation like hyphen, colon
+    .replace(/final update.*$/i, '')
+    .replace(/update\s+#?\d+.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 
   // Extract alerts
   let alerts;
