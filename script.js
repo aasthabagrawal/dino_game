@@ -1,24 +1,26 @@
-import { get as levenshtein } from 'fast-levenshtein';
-
 export const processAlerts = (data) => {
   let open = 0;
   let closed = 0;
 
-  const activeAlerts = new Set(); // base titles (not final or updates)
-  const finalUpdates = [];        // titles marked as final update
-  const openTitles = [];
+  const activeAlerts = new Set(); // alerts opened but not yet closed
+  const finalUpdates = [];
+  const everOpened = [];
   const unmatchedFinalUpdates = [];
   const discrepantAlerts = [];
 
-  const noiseWords = new Set(['high', 'alert', 'reg', 'sci', 'final', 'update']);
+  const noiseWords = new Set([
+    'high', 'alert', 'final', 'update', 'reg', 'sc',
+    'auto', 'automatically', 'initiated', 'cap', 'report', 'summary'
+  ]);
 
   const getCoreWords = (title = '') => {
     return new Set(
       title
         .toLowerCase()
-        .replace(/update\s*#?\d+.*$/i, '')        // Remove update suffix
-        .replace(/final update.*$/i, '')          // Remove final update suffix
-        .replace(/[^\w\s]/g, '')                  // Remove punctuation
+        .replace(/update\s*#?\d+.*$/i, '')         // Remove "update #1" and suffix
+        .replace(/final update.*$/i, '')           // Remove "final update"
+        .replace(/\.[a-z]{2,5}\b/g, '')            // Remove ".xyz" etc.
+        .replace(/[^\w\s]/g, '')                   // Remove punctuation
         .split(/\s+/)
         .filter(word => word.length > 2 && !noiseWords.has(word))
     );
@@ -34,7 +36,7 @@ export const processAlerts = (data) => {
     return true;
   };
 
-  // Extract alerts
+  // Extract alerts from response
   let alerts;
   if (data?.ResponseStatus?.alerts) {
     alerts = Array.isArray(data.ResponseStatus.alerts.alert)
@@ -44,10 +46,10 @@ export const processAlerts = (data) => {
     alerts = data;
   } else {
     console.warn("❌ No valid alert data found");
-    return { open, closed, openTitles, unmatchedFinalUpdates, discrepantAlerts };
+    return { open, closed, openTitles: [], unmatchedFinalUpdates, discrepantAlerts };
   }
 
-  // First pass
+  // First pass: find open alerts and collect final updates
   alerts.forEach(alert => {
     const title = alert?.reportSummary?.title || alert?.title || '';
     if (!/high\s*alert/i.test(title)) return;
@@ -58,16 +60,16 @@ export const processAlerts = (data) => {
     if (isFinal) {
       finalUpdates.push(title);
     } else if (!isIntermediate) {
-      // Only pure base alerts go to active list
+      // Only count base alerts
       if (![...activeAlerts].some(t => areTitlesEquivalent(t, title))) {
         activeAlerts.add(title);
+        everOpened.push(title);
         open++;
-        openTitles.push(title);
       }
     }
   });
 
-  // Second pass
+  // Second pass: resolve final updates
   finalUpdates.forEach(finalTitle => {
     const match = [...activeAlerts].find(openTitle =>
       areTitlesEquivalent(openTitle, finalTitle)
@@ -82,21 +84,21 @@ export const processAlerts = (data) => {
     }
   });
 
-  // Any remaining in activeAlerts are open
+  // Remaining active are unmatched open alerts
   [...activeAlerts].forEach(title => {
     discrepantAlerts.push({ type: 'OPEN', title });
   });
 
-  console.log(`✅ Final counts — OPEN: ${open}, CLOSED: ${closed}`);
-
   return {
     open,
     closed,
-    openTitles,
+    openTitles: [...activeAlerts],           // only currently open
+    allOpenTitles: everOpened,               // everything ever opened
     unmatchedFinalUpdates,
     discrepantAlerts,
   };
 };
+
 
 
 
