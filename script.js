@@ -1,3 +1,8 @@
+// assume date already sits in 2nd column elsewhere
+      const dateMatch = title.match(/\b\d{2}-\d{2}-\d{4}\b/);
+      const date = dateMatch ? dateMatch[0] : '';
+
+
 import stringSimilarity from 'string-similarity';
 
 export const processAlerts = (data) => {
