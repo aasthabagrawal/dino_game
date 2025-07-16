@@ -1,13 +1,25 @@
+import os
 import shutil
 
-local_file = r"C:\Users\user1\Scripts\IPO_STAGING\backend\ipooutput.csv"
-remote_path = r"Z:\ipooutput.csv"
+local_file = r"C:\Users\aasagr\upload_test\ipooutput.csv"
+remote_path = r"\\10.32.54.43\SharedIPO\ipooutput.csv"
 
-try:
-    shutil.copy(local_file, remote_path)
-    print("File uploaded to Windows server via mapped SMB share.")
-except Exception as e:
-    print(f"Upload failed: {e}")
+# Check file exists
+if not os.path.isfile(local_file):
+    print("❌ Local file not found:", local_file)
+    exit()
+
+# Check if network path is reachable
+remote_folder = os.path.dirname(remote_path)
+if os.path.exists(remote_folder):
+    try:
+        shutil.copy(local_file, remote_path)
+        print("✅ File uploaded to network share successfully.")
+    except Exception as e:
+        print("❌ Upload failed:", str(e))
+else:
+    print("❌ Network path not accessible. Check share permissions or server status.")
+
 
 
 
