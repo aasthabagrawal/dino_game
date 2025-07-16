@@ -1,3 +1,16 @@
+import shutil
+
+local_file = r"C:\Users\user1\Scripts\IPO_STAGING\backend\ipooutput.csv"
+remote_path = r"Z:\ipooutput.csv"
+
+try:
+    shutil.copy(local_file, remote_path)
+    print("File uploaded to Windows server via mapped SMB share.")
+except Exception as e:
+    print(f"Upload failed: {e}")
+
+
+
 // assume date already sits in 2nd column elsewhere
       const dateMatch = title.match(/\b\d{2}-\d{2}-\d{4}\b/);
       const date = dateMatch ? dateMatch[0] : '';
