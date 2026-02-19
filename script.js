@@ -1,3 +1,25 @@
+    body {
+      background-color: #1e1e1e;
+      color: #00ff00;
+      font-family: monospace;
+      padding: 20px;
+    }
+
+    #terminal {
+      background-color: black;
+      padding: 15px;
+      height: 400px;
+      overflow-y: auto;
+      border-radius: 8px;
+      white-space: pre-wrap;
+    }
+
+    button {
+      margin-bottom: 10px;
+      padding: 8px 15px;
+      cursor: pointer;
+    }
+
 import os
 import shutil
 
@@ -205,3 +227,4 @@ setInterval(() => {
     location.reload();
   }
 }, 50);
+
