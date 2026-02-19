@@ -1,4 +1,7 @@
-    body {
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
+<script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
+
+body {
       background-color: #1e1e1e;
       color: #00ff00;
       font-family: monospace;
@@ -227,4 +230,5 @@ setInterval(() => {
     location.reload();
   }
 }, 50);
+
 
