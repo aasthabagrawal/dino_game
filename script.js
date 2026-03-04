@@ -1,27 +1,230 @@
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
-<script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
+npm init -y
+npm install express axios dotenv winston helmet cors
 
-body {
-      background-color: #1e1e1e;
-      color: #00ff00;
-      font-family: monospace;
-      padding: 20px;
+server.js
+import app from "./app.js";
+import { config } from "./config/env.js";
+
+app.listen(config.PORT, () => {
+  console.log(`Server running on port ${config.PORT}`);
+});
+
+app.js
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import askRoute from "./routes/ask.route.js";
+import errorMiddleware from "./middlewares/error.middleware.js";
+
+const app = express();
+
+app.use(helmet());
+app.use(cors());
+app.use(express.json());
+
+app.use("/api/ask", askRoute);
+
+app.use(errorMiddleware);
+
+export default app;
+
+config.js
+import dotenv from "dotenv";
+dotenv.config();
+
+export const config = {
+  PORT: process.env.PORT || 5000,
+  CONFLUENCE_BASE_URL: process.env.CONFLUENCE_BASE_URL,
+  CONFLUENCE_EMAIL: process.env.CONFLUENCE_EMAIL,
+  CONFLUENCE_API_TOKEN: process.env.CONFLUENCE_API_TOKEN,
+  GENAI_ENDPOINT: process.env.GENAI_ENDPOINT,
+};
+
+
+
+route.js
+import express from "express";
+import { askQuestion } from "../controllers/ask.controller.js";
+
+const router = express.Router();
+router.post("/", askQuestion);
+
+export default router;
+
+
+
+controller.js
+import confluenceService from "../services/confluence.service.js";
+import retrievalService from "../services/retrieval.service.js";
+import genaiService from "../services/genai.service.js";
+import validationService from "../services/validation.service.js";
+import { buildPrompt } from "../utils/prompt.util.js";
+
+export const askQuestion = async (req, res, next) => {
+  try {
+    const { question } = req.body;
+
+    const pages = await confluenceService.searchPages(question);
+
+    if (!pages.length) {
+      return res.json({ answer: "Information not found in Confluence." });
     }
 
-    #terminal {
-      background-color: black;
-      padding: 15px;
-      height: 400px;
-      overflow-y: auto;
-      border-radius: 8px;
-      white-space: pre-wrap;
+    const filteredContent = await retrievalService.extractRelevantContent(
+      pages,
+      question
+    );
+
+    const prompt = buildPrompt(filteredContent, question);
+
+    const llmResponse = await genaiService.generate(prompt);
+
+    const validated = await validationService.validate(llmResponse);
+
+    res.json(validated);
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+conf.js
+import axios from "axios";
+import { config } from "../config/env.js";
+
+class ConfluenceService {
+
+  async searchPages(query) {
+    const response = await axios.get(
+      `${config.CONFLUENCE_BASE_URL}/wiki/rest/api/search`,
+      {
+        params: {
+          cql: `text ~ "${query}"`,
+          limit: 3
+        },
+        auth: {
+          username: config.CONFLUENCE_EMAIL,
+          password: config.CONFLUENCE_API_TOKEN
+        }
+      }
+    );
+
+    return response.data.results;
+  }
+
+  async getPageContent(pageId) {
+    const response = await axios.get(
+      `${config.CONFLUENCE_BASE_URL}/wiki/rest/api/content/${pageId}?expand=body.storage`,
+      {
+        auth: {
+          username: config.CONFLUENCE_EMAIL,
+          password: config.CONFLUENCE_API_TOKEN
+        }
+      }
+    );
+
+    return response.data.body.storage.value;
+  }
+}
+
+export default new ConfluenceService();
+
+
+retrieval.js
+import confluenceService from "./confluence.service.js";
+import { cleanHTML } from "../utils/htmlCleaner.util.js";
+import { chunkText } from "../utils/chunk.util.js";
+
+class RetrievalService {
+
+  async extractRelevantContent(pages, question) {
+    let combined = "";
+
+    for (let page of pages) {
+      const html = await confluenceService.getPageContent(page.content.id);
+      const cleanText = cleanHTML(html);
+      const chunks = chunkText(cleanText);
+
+      const relevant = chunks.filter(chunk =>
+        chunk.toLowerCase().includes(question.toLowerCase())
+      );
+
+      combined += relevant.join("\n\n");
     }
 
-    button {
-      margin-bottom: 10px;
-      padding: 8px 15px;
-      cursor: pointer;
+    return combined;
+  }
+}
+
+export default new RetrievalService();
+
+
+genai.servvice
+import axios from "axios";
+import { config } from "../config/env.js";
+
+class GenAIService {
+
+  async generate(prompt) {
+    const response = await axios.post(config.GENAI_ENDPOINT, {
+      prompt,
+      temperature: 0.2
+    });
+
+    return response.data;
+  }
+}
+
+export default new GenAIService();
+
+
+validation service
+class ValidationService {
+
+  async validate(response) {
+    if (!response || response.length < 10) {
+      return { answer: "Information not found in Confluence." };
     }
+
+    return { answer: response };
+  }
+}
+
+export default new ValidationService();
+
+prompt.util
+export const buildPrompt = (content, question) => {
+  return `
+You are an enterprise assistant.
+
+Answer ONLY using the content below.
+If answer not explicitly present, respond exactly:
+"Information not found in Confluence."
+
+Content:
+----------------
+${content}
+----------------
+
+Question:
+${question}
+
+Format:
+Answer:
+Evidence:
+Confidence:
+`;
+};
+
+.env
+PORT=5000
+CONFLUENCE_BASE_URL=https://yourcompany.atlassian.net
+CONFLUENCE_EMAIL=your-email
+CONFLUENCE_API_TOKEN=your-token
+GENAI_ENDPOINT=https://your-company-genai-api
+
+
 
 import os
 import shutil
@@ -230,5 +433,6 @@ setInterval(() => {
     location.reload();
   }
 }, 50);
+
 
 
