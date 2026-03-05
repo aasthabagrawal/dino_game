@@ -1,3 +1,8 @@
+curl -X POST https://ai.nasdaq.com/YOUR_ENDPOINT \
+-H "Content-Type: application/json" \
+-H "Authorization: Bearer ABCDE" \
+-d '{"prompt":"Hello"}'
+  
 npm init -y
 npm install express axios dotenv winston helmet cors
 
@@ -433,6 +438,7 @@ setInterval(() => {
     location.reload();
   }
 }, 50);
+
 
 
 
