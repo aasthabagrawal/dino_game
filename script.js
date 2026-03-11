@@ -1,3 +1,75 @@
+app.post("/chat", async (req, res) => {
+    try {
+
+        const userQuery = req.body.query;
+
+        const response = await axios.post(
+            "abc",   // GenAI API URL
+            {
+                convId: "12345",
+                parentmsgId: "0",
+                query: userQuery
+            },
+            {
+                headers: {
+                    "client-id": "YOUR_CLIENT_ID",
+                    "client-secret": "YOUR_CLIENT_SECRET",
+                    "Content-Type": "application/json"
+                }
+            }
+        );
+
+        res.json(response.data);
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).send("API Error");
+    }
+});
+
+app.listen(3000, () => {
+    console.log("Server running on port 3000");
+});
+
+
+document.getElementById("chatbox-send").addEventListener("click", sendMessage);
+
+async function sendMessage() {
+
+    const input = document.getElementById("chatbox-input");
+    const message = input.value;
+
+    const response = await fetch("http://localhost:3000/chat", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            query: message
+        })
+    });
+
+    const data = await response.json();
+
+    console.log(data);
+
+    const chatContent = document.querySelector(".chatbox-content");
+
+    const reply = document.createElement("div");
+    reply.className = "msg-item reply";
+    reply.innerText = data.answer || JSON.stringify(data);
+
+    chatContent.appendChild(reply);
+
+    input.value = "";
+}
+
+
+
+
+
+
+
 curl -X POST https://ai.nasdaq.com/YOUR_ENDPOINT \
 -H "Content-Type: application/json" \
 -H "Authorization: Bearer ABCDE" \
@@ -438,6 +510,7 @@ setInterval(() => {
     location.reload();
   }
 }, 50);
+
 
 
 
