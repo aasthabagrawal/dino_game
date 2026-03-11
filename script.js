@@ -1,3 +1,60 @@
+document.addEventListener("DOMContentLoaded", function () {
+
+    const sendBtn = document.getElementById("chatbox-send");
+    const input = document.getElementById("chatbox-input");
+    const chatContent = document.querySelector(".chatbox-content");
+
+    sendBtn.addEventListener("click", async function () {
+
+        const message = input.value;
+
+        if (!message) return;
+
+        // show user message
+        const userMsg = document.createElement("div");
+        userMsg.className = "msg-item user";
+        userMsg.innerText = message;
+        chatContent.appendChild(userMsg);
+
+        try {
+
+            const response = await fetch("http://localhost:3000/chat", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    query: message,
+                    convId: "123",
+                    parentmsgId: "0"
+                })
+            });
+
+            const data = await response.json();
+
+            const botMsg = document.createElement("div");
+            botMsg.className = "msg-item reply";
+
+            botMsg.innerText = data.answer || JSON.stringify(data);
+
+            chatContent.appendChild(botMsg);
+
+        } catch (error) {
+
+            const botMsg = document.createElement("div");
+            botMsg.className = "msg-item reply";
+            botMsg.innerText = "Error calling AI API";
+
+            chatContent.appendChild(botMsg);
+        }
+
+        input.value = "";
+
+    });
+
+});
+
+
 app.post("/chat", async (req, res) => {
     try {
 
@@ -510,6 +567,7 @@ setInterval(() => {
     location.reload();
   }
 }, 50);
+
 
 
 
